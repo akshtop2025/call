@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp-like Video Call</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; }
+        video { width: 45%; height: 300px; margin: 10px; background: #000; }
+        #callControls { margin-top: 20px; }
+        button { margin: 10px; padding: 10px 20px; font-size: 16px; }
+    </style>
+</head>
+<body>
+    <h1>WhatsApp-like Video Call</h1>
+
+    <!-- Local and remote video -->
+    <div id="videoContainer">
+        <video id="localVideo" autoplay playsinline></video>
+        <video id="remoteVideo" autoplay playsinline></video>
+    </div>
+
+    <!-- Call controls (like WhatsApp) -->
+    <div id="callControls">
+        <button id="callButton">Start Call</button>
+        <button id="answerButton">Answer Call</button>
+        <button id="hangupButton">Hang Up</button>
+        <button id="muteButton">Mute</button>
+        <button id="cameraSwitchButton">Switch Camera</button>
+    </div>
+
+    <script>
+        let localStream;
+        let remoteStream;
+        let peerConnection;
+        let isMuted = false;
+        let isUsingFrontCamera = true;
+
+        const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+        const ws = new WebSocket('ws://localhost:8080'); // Connect to WebSocket signaling server
+
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+        const callButton = document.getElementById('callButton');
+        const answerButton = document.getElementById('answerButton');
+        const hangupButton = document.getElementById('hangupButton');
+        const muteButton = document.getElementById('muteButton');
+        const cameraSwitchButton = document.getElementById('cameraSwitchButton');
+
+        // Get user media (camera and microphone)
+        async function getMedia() {
+            const constraints = { video: { facingMode: (isUsingFrontCamera ? 'user' : 'environment') }, audio: true };
+            localStream = await navigator.mediaDevices.getUserMedia(constraints);
+            localVideo.srcObject = localStream;
+        }
+
+        getMedia();
+
+        callButton.addEventListener('click', startCall);
+        answerButton.addEventListener('click', answerCall);
+        hangupButton.addEventListener('click', hangUpCall);
+        muteButton.addEventListener('click', toggleMute);
+        cameraSwitchButton.addEventListener('click', switchCamera);
+
+        // Start the call
+        function startCall() {
+            peerConnection = new RTCPeerConnection(configuration);
+
+            // Add local tracks to peer connection
+            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+            // Listen for remote stream
+            peerConnection.ontrack = (event) => {
+                remoteStream = event.streams[0];
+                remoteVideo.srcObject = remoteStream;
+            };
+
+            // Handle ICE candidates
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    ws.send(JSON.stringify({ type: 'ice-candidate', candidate: event.candidate }));
+                }
+            };
+
+            // Create offer
+            peerConnection.createOffer().then(offer => {
+                peerConnection.setLocalDescription(offer);
+                ws.send(JSON.stringify({ type: 'offer', offer }));
+            });
+        }
+
+        // Answer the call
+        function answerCall() {
+            peerConnection = new RTCPeerConnection(configuration);
+
+            // Add local tracks to peer connection
+            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+            // Listen for remote stream
+            peerConnection.ontrack = (event) => {
+                remoteStream = event.streams[0];
+                remoteVideo.srcObject = remoteStream;
+            };
+
+            // Handle ICE candidates
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    ws.send(JSON.stringify({ type: 'ice-candidate', candidate: event.candidate }));
+                }
+            };
+        }
+
+        // Hang up the call
+        function hangUpCall() {
+            peerConnection.close();
+            peerConnection = null;
+            remoteVideo.srcObject = null;
+        }
+
+        // Toggle mute/unmute
+        function toggleMute() {
+            isMuted = !isMuted;
+            localStream.getAudioTracks()[0].enabled = !isMuted;
+            muteButton.textContent = isMuted ? 'Unmute' : 'Mute';
+        }
+
+        // Switch between front and back camera
+        async function switchCamera() {
+            isUsingFrontCamera = !isUsingFrontCamera;
+            await getMedia(); // Reinitialize the media stream with the new camera
+        }
+
+        // WebSocket signaling handler
+        ws.onmessage = (message) => {
+            const data = JSON.parse(message.data);
+
+            if (data.type === 'offer') {
+                peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+                peerConnection.createAnswer().then(answer => {
+                    peerConnection.setLocalDescription(answer);
+                    ws.send(JSON.stringify({ type: 'answer', answer }));
+                });
+            }
+
+            if (data.type === 'answer') {
+                peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+            }
+
+            if (data.type === 'ice-candidate') {
+                const candidate = new RTCIceCandidate(data.candidate);
+                peerConnection.addIceCandidate(candidate);
+            }
+        };
+    </script>
+</body>
+</html>
