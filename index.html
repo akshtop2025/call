@@ -63,51 +63,60 @@
         cameraSwitchButton.addEventListener('click', switchCamera);
 
         // Start the call
-        function startCall() {
-            peerConnection = new RTCPeerConnection(configuration);
+        async function startCall() {
+            try {
+                peerConnection = new RTCPeerConnection(configuration);
 
-            // Add local tracks to peer connection
-            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+                // Add local tracks to peer connection
+                localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
-            // Listen for remote stream
-            peerConnection.ontrack = (event) => {
-                remoteStream = event.streams[0];
-                remoteVideo.srcObject = remoteStream;
-            };
+                peerConnection.ontrack = (event) => {
+                    if (!remoteStream) {
+                        remoteStream = new MediaStream();
+                        remoteVideo.srcObject = remoteStream;
+                    }
+                    remoteStream.addTrack(event.track);
+                };
 
-            // Handle ICE candidates
-            peerConnection.onicecandidate = (event) => {
-                if (event.candidate) {
-                    ws.send(JSON.stringify({ type: 'ice-candidate', candidate: event.candidate }));
-                }
-            };
+                peerConnection.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        ws.send(JSON.stringify({ type: 'ice-candidate', candidate: event.candidate }));
+                    }
+                };
 
-            // Create offer
-            peerConnection.createOffer().then(offer => {
-                peerConnection.setLocalDescription(offer);
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
                 ws.send(JSON.stringify({ type: 'offer', offer }));
-            });
+
+            } catch (error) {
+                console.error('Error starting call:', error);
+            }
         }
 
         // Answer the call
-        function answerCall() {
-            peerConnection = new RTCPeerConnection(configuration);
+        async function answerCall() {
+            try {
+                peerConnection = new RTCPeerConnection(configuration);
 
-            // Add local tracks to peer connection
-            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+                localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
-            // Listen for remote stream
-            peerConnection.ontrack = (event) => {
-                remoteStream = event.streams[0];
-                remoteVideo.srcObject = remoteStream;
-            };
+                peerConnection.ontrack = (event) => {
+                    if (!remoteStream) {
+                        remoteStream = new MediaStream();
+                        remoteVideo.srcObject = remoteStream;
+                    }
+                    remoteStream.addTrack(event.track);
+                };
 
-            // Handle ICE candidates
-            peerConnection.onicecandidate = (event) => {
-                if (event.candidate) {
-                    ws.send(JSON.stringify({ type: 'ice-candidate', candidate: event.candidate }));
-                }
-            };
+                peerConnection.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        ws.send(JSON.stringify({ type: 'ice-candidate', candidate: event.candidate }));
+                    }
+                };
+
+            } catch (error) {
+                console.error('Error answering call:', error);
+            }
         }
 
         // Hang up the call
